@@ -76,7 +76,14 @@ class LungeAnalyzer:
 
         shoulder = landing_lm[f"{front_side}_shoulder"]
         hip = landing_lm[f"{front_side}_hip"]
-        vertical_ref = (hip[0], hip[1] - 100)
+
+        hip_x = get_coord(hip, "x")
+        hip_y = get_coord(hip, "y")
+
+        # MediaPipe returns normalized coordinates, usually around 0.0–1.0.
+        # So use 1.0 as a vertical reference distance instead of 100 pixels.
+        vertical_ref = (hip_x, hip_y - 1.0)
+
         torso_lean = calculate_angle(vertical_ref, hip, shoulder)
 
         head_vertical_range = max(nose_y) - min(nose_y)
