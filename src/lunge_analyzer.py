@@ -8,6 +8,30 @@ from .geometry import calculate_angle
 from .timing import detect_landing_frame, detect_start_frame
 
 
+def get_coord(landmark, axis: str) -> float:
+    """
+    Support both landmark formats:
+    - dict: {"x": ..., "y": ..., "z": ..., "visibility": ...}
+    - list/tuple: [x, y, z, visibility]
+    """
+    if isinstance(landmark, dict):
+        return float(landmark[axis])
+
+    axis_index = {
+        "x": 0,
+        "y": 1,
+        "z": 2,
+        "visibility": 3,
+    }
+    return float(landmark[axis_index[axis]])
+
+
+def as_xy_point(landmark) -> tuple[float, float]:
+    return (
+        get_coord(landmark, "x"),
+        get_coord(landmark, "y"),
+    )
+
 class LungeAnalyzer:
     """Analyze sequence of pose landmarks.
 
@@ -26,16 +50,16 @@ class LungeAnalyzer:
                 "correction_plan": ["Record again from side view with whole body visible."],
             }
 
-        left_wrist_x = [lm["left_wrist"][0] for lm in valid]
-        right_wrist_x = [lm["right_wrist"][0] for lm in valid]
+        left_wrist_x = [get_coord(lm["left_wrist"], "x") for lm in valid]
+        right_wrist_x = [get_coord(lm["right_wrist"], "x") for lm in valid]
 
         left_disp = max(left_wrist_x) - min(left_wrist_x)
         right_disp = max(right_wrist_x) - min(right_wrist_x)
         front_side = "left" if left_disp > right_disp else "right"
 
-        wrist_x = [lm[f"{front_side}_wrist"][0] for lm in valid]
-        ankle_x = [lm[f"{front_side}_ankle"][0] for lm in valid]
-        nose_y = [lm["nose"][1] for lm in valid]
+        wrist_x = [get_coord(lm[f"{front_side}_wrist"], "x") for lm in valid]
+        ankle_x = [get_coord(lm[f"{front_side}_ankle"], "x") for lm in valid]
+        nose_y = [get_coord(lm["nose"], "y") for lm in valid]
 
         wrist_start = detect_start_frame(wrist_x, threshold=12.0)
         foot_start = detect_start_frame(ankle_x, threshold=10.0)
