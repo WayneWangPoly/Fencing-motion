@@ -257,6 +257,7 @@ class LungeAnalyzer:
             "post_landing_torso_drift": post_landing_torso_drift,
             "post_landing_ankle_delta": round(ankle_post_delta, 6),
             "post_landing_torso_delta": round(torso_post_delta, 6),
+            "wrist_start_frame_global": wrist_start,
             "wrist_start_frame_in_lunge": wrist_start,
             "foot_start_frame_in_lunge": foot_start,
             "hand_starts_before_foot_in_lunge": hand_before_lunge,
