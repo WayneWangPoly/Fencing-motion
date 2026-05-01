@@ -108,6 +108,34 @@ class PoseExtractor:
 
         return output
 
+    def process_frame(
+        self,
+        frame_bgr: np.ndarray,
+        timestamp_ms: int | None = None,
+    ) -> tuple[dict[str, dict[str, float]] | None, np.ndarray]:
+        """
+        Compatibility method for the original analyze_lunge.py flow.
+
+        Returns:
+            landmarks, overlay_frame
+        """
+        if timestamp_ms is None:
+            # Fallback timestamp for old callers.
+            # MediaPipe VIDEO mode requires monotonically increasing timestamps,
+            # so we maintain an internal counter when the caller does not pass one.
+            if not hasattr(self, "_frame_counter"):
+                self._frame_counter = 0
+
+            timestamp_ms = int((self._frame_counter / 30.0) * 1000)
+            self._frame_counter += 1
+
+        landmarks = self.extract_frame_landmarks(frame_bgr, timestamp_ms)
+        overlay = self.draw_landmarks(frame_bgr, landmarks)
+
+        return landmarks, overlay
+    
+
+
     def extract(self, frames: list[np.ndarray], fps: float) -> list[dict[str, Any] | None]:
         """
         Extract landmarks for all frames.
