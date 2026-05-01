@@ -1,6 +1,6 @@
 # Fencing Motion Prototype
 
-A local Python command-line prototype for first-pass side-view epee lunge analysis using body landmarks from MediaPipe Tasks PoseLandmarker.
+A local Python command-line prototype for first-pass side-view epee lunge analysis using body landmarks from MediaPipe Pose.
 
 ## Scope (v1)
 
@@ -15,18 +15,18 @@ Because this is a first version, metric quality depends heavily on camera angle,
 ## Project structure
 
 ```text
-requirements.txt
-README.md
-analyze_lunge.py
-src/
-  video_io.py
-  pose_extractor.py
-  geometry.py
-  timing.py
-  lunge_analyzer.py
-  report_generator.py
-output/
-sample_videos/
+fencing-motion-prototype/
+  requirements.txt
+  README.md
+  analyze_lunge.py
+  src/
+    video_io.py
+    pose_extractor.py
+    geometry.py
+    timing.py
+    lunge_analyzer.py
+    report_generator.py
+  output/
 ```
 
 ## Setup
@@ -36,18 +36,6 @@ sample_videos/
 
 ```bash
 pip install -r requirements.txt
-```
-
-3. (Optional smoke test) Verify MediaPipe version:
-
-```bash
-python -c "import mediapipe as mp; print(mp.__version__)"
-```
-
-4. The pose model is auto-downloaded on first run to:
-
-```text
-models/pose_landmarker_lite.task
 ```
 
 ## Run
