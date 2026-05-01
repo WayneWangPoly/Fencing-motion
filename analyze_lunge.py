@@ -35,8 +35,7 @@ def main() -> None:
         writer = None
 
     for i, frame in enumerate(frames):
-        timestamp_ms = int((i / fps) * 1000)
-        landmarks, overlay = extractor.process_frame(frame, timestamp_ms=timestamp_ms)
+        landmarks, overlay = extractor.process_frame(frame)
         landmarks_per_frame.append(landmarks)
 
         cv2.putText(

@@ -2,32 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .geometry import calculate_angle
 from .timing import detect_landing_frame, detect_start_frame
-
-
-def get_coord(landmark: Any, axis: str) -> float:
-    """Get a landmark coordinate from dict or tuple/list formats.
-
-    Supported inputs:
-    - dict: {"x": ..., "y": ..., ...}
-    - tuple/list: [x, y, ...] or (x, y, ...)
-    """
-    if axis not in {"x", "y"}:
-        raise ValueError(f"Unsupported axis: {axis}")
-
-    if isinstance(landmark, dict):
-        return float(landmark[axis])
-
-    idx = 0 if axis == "x" else 1
-    return float(landmark[idx])
-
-
-def to_xy(landmark: Any) -> Tuple[float, float]:
-    """Return (x, y) tuple for geometry helpers."""
-    return get_coord(landmark, "x"), get_coord(landmark, "y")
 
 
 class LungeAnalyzer:
@@ -38,7 +16,7 @@ class LungeAnalyzer:
     - Front side inferred by larger wrist horizontal excursion.
     """
 
-    def analyze(self, landmark_frames: List[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
+    def analyze(self, landmark_frames: List[Optional[Dict[str, tuple[float, float]]]]) -> Dict[str, Any]:
         valid = [lm for lm in landmark_frames if lm is not None]
         if len(valid) < 5:
             return {
@@ -48,16 +26,16 @@ class LungeAnalyzer:
                 "correction_plan": ["Record again from side view with whole body visible."],
             }
 
-        left_wrist_x = [get_coord(lm["left_wrist"], "x") for lm in valid]
-        right_wrist_x = [get_coord(lm["right_wrist"], "x") for lm in valid]
+        left_wrist_x = [lm["left_wrist"][0] for lm in valid]
+        right_wrist_x = [lm["right_wrist"][0] for lm in valid]
 
         left_disp = max(left_wrist_x) - min(left_wrist_x)
         right_disp = max(right_wrist_x) - min(right_wrist_x)
         front_side = "left" if left_disp > right_disp else "right"
 
-        wrist_x = [get_coord(lm[f"{front_side}_wrist"], "x") for lm in valid]
-        ankle_x = [get_coord(lm[f"{front_side}_ankle"], "x") for lm in valid]
-        nose_y = [get_coord(lm["nose"], "y") for lm in valid]
+        wrist_x = [lm[f"{front_side}_wrist"][0] for lm in valid]
+        ankle_x = [lm[f"{front_side}_ankle"][0] for lm in valid]
+        nose_y = [lm["nose"][1] for lm in valid]
 
         wrist_start = detect_start_frame(wrist_x, threshold=12.0)
         foot_start = detect_start_frame(ankle_x, threshold=10.0)
@@ -67,13 +45,13 @@ class LungeAnalyzer:
         landing_lm = valid[landing] if 0 <= landing < len(valid) else valid[-1]
 
         knee_angle = calculate_angle(
-            to_xy(landing_lm[f"{front_side}_hip"]),
-            to_xy(landing_lm[f"{front_side}_knee"]),
-            to_xy(landing_lm[f"{front_side}_ankle"]),
+            landing_lm[f"{front_side}_hip"],
+            landing_lm[f"{front_side}_knee"],
+            landing_lm[f"{front_side}_ankle"],
         )
 
-        shoulder = to_xy(landing_lm[f"{front_side}_shoulder"])
-        hip = to_xy(landing_lm[f"{front_side}_hip"])
+        shoulder = landing_lm[f"{front_side}_shoulder"]
+        hip = landing_lm[f"{front_side}_hip"]
         vertical_ref = (hip[0], hip[1] - 100)
         torso_lean = calculate_angle(vertical_ref, hip, shoulder)
 
