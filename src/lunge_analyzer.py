@@ -33,7 +33,12 @@ def moving_average(values: List[float], window: int = 5) -> List[float]:
 
 
 class LungeAnalyzer:
-    def _detect_segments(self, velocity: List[float], low_threshold: float, gap_merge: int = 2) -> List[Tuple[int, int]]:
+    def _detect_segments(
+        self,
+        velocity: List[float],
+        low_threshold: float,
+        gap_merge: int = 2,
+    ) -> List[Tuple[int, int]]:
         raw: List[Tuple[int, int]] = []
         start = None
         for i, v in enumerate(velocity):
@@ -44,7 +49,6 @@ class LungeAnalyzer:
                 start = None
         if start is not None:
             raw.append((start, len(velocity) - 1))
-
         if not raw:
             return []
 
@@ -70,7 +74,6 @@ class LungeAnalyzer:
     ) -> Dict[str, Any]:
         s, e = seg
         peak = max(range(s, e + 1), key=lambda i: front_ankle_vel[i])
-
         front_disp = abs(front_ankle_x[e] - front_ankle_x[s])
         back_disp = abs(back_ankle_x[e] - back_ankle_x[s])
 
@@ -96,10 +99,8 @@ class LungeAnalyzer:
         near_e = min(len(valid) - 1, e + 3)
         wrist_disp = abs(wrist_x[near_e] - wrist_x[near_s])
         torso_disp = abs(torso_mid_x[near_e] - torso_mid_x[near_s])
-
         max_vel = max(front_ankle_vel[s : e + 1]) if e >= s else 0.0
 
-        # Penalty if back-foot movement mirrors front-foot movement (likely advance step)
         mirror_penalty = 0.0
         if front_disp > 0:
             ratio = back_disp / front_disp
@@ -133,12 +134,29 @@ class LungeAnalyzer:
             "lunge_score": round(lunge_score, 6),
         }
 
-    def analyze(self, landmark_frames: List[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
-        valid = [lm for lm in landmark_frames if lm is not None]
+    @staticmethod
+    def _global_frame(valid_to_global: List[int], valid_index: int) -> int:
+        if valid_index < 0 or valid_index >= len(valid_to_global):
+            return -1
+        return valid_to_global[valid_index]
+
+    def analyze(
+        self,
+        landmark_frames: List[Optional[Dict[str, Any]]],
+        fps: Optional[float] = None,
+        recovery_frame: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        valid_pairs = [(idx, lm) for idx, lm in enumerate(landmark_frames) if lm is not None]
+        valid = [lm for _, lm in valid_pairs]
+        valid_to_global = [idx for idx, _ in valid_pairs]
+
         if len(valid) < 5:
             return {
                 "error": "Not enough valid pose frames for analysis.",
-                "metrics": {"number_of_valid_frames": len(valid)},
+                "metrics": {
+                    "number_of_valid_frames": len(valid),
+                    "number_of_input_frames": len(landmark_frames),
+                },
                 "issues": ["Pose detection insufficient; improve framing/lighting."],
                 "correction_plan": ["Record again from side view with whole body visible."],
             }
@@ -161,7 +179,6 @@ class LungeAnalyzer:
 
         front_ankle_vel = [0.0] + [abs(front_ankle_x[i] - front_ankle_x[i - 1]) for i in range(1, len(front_ankle_x))]
         wrist_vel = [0.0] + [abs(wrist_x[i] - wrist_x[i - 1]) for i in range(1, len(wrist_x))]
-
         max_ankle_vel = max(front_ankle_vel) if front_ankle_vel else 0.0
         low_thr = max(0.0015, max_ankle_vel * 0.15)
 
@@ -188,11 +205,15 @@ class LungeAnalyzer:
                     "wrist_start_frame": -1,
                     "foot_start_frame": -1,
                     "landing_frame": -1,
+                    "recovery_frame": recovery_frame,
+                    "recovery_frame_source": "manual" if recovery_frame is not None else "not_set",
+                    "recovery_time_seconds": None,
                     "hand_starts_before_foot": False,
                     "front_knee_angle_at_landing_deg": 0.0,
                     "torso_lean_angle_at_landing_deg": 0.0,
                     "head_vertical_movement_range_px": round(max(nose_y) - min(nose_y), 2),
                     "number_of_valid_frames": len(valid),
+                    "number_of_input_frames": len(landmark_frames),
                     "movement_segments": [],
                     "selected_lunge_segment_index": -1,
                     "selected_lunge_score": 0.0,
@@ -209,21 +230,24 @@ class LungeAnalyzer:
 
         selected_idx = max(range(len(movement_segments)), key=lambda i: movement_segments[i]["lunge_score"])
         selected = movement_segments[selected_idx]
+        foot_start_valid = int(selected["start"])
+        landing_valid = int(selected["end"])
+        lunge_peak_valid = int(selected["peak_frame"])
 
-        foot_start = selected["start"]
-        landing = selected["end"]
-        lunge_peak = selected["peak_frame"]
-
-        w_start = max(0, foot_start - 3)
-        w_end = landing
+        w_start = max(0, foot_start_valid - 3)
+        w_end = landing_valid
         wrist_window = wrist_x[w_start : w_end + 1]
         wrist_thr = max(0.003, (max(wrist_vel) if wrist_vel else 0.0) * 0.25)
         wrist_local = detect_start_frame(wrist_window, wrist_thr)
-        wrist_start = w_start + wrist_local if wrist_local != -1 else -1
+        wrist_start_valid = w_start + wrist_local if wrist_local != -1 else -1
 
-        hand_before_lunge = wrist_start != -1 and wrist_start < foot_start
+        foot_start = self._global_frame(valid_to_global, foot_start_valid)
+        landing = self._global_frame(valid_to_global, landing_valid)
+        lunge_peak = self._global_frame(valid_to_global, lunge_peak_valid)
+        wrist_start = self._global_frame(valid_to_global, wrist_start_valid)
+        hand_before_lunge = wrist_start != -1 and foot_start != -1 and wrist_start < foot_start
 
-        landing_lm = valid[landing]
+        landing_lm = valid[landing_valid]
         knee_angle = calculate_angle(
             to_xy(landing_lm[f"{front_side}_hip"]),
             to_xy(landing_lm[f"{front_side}_knee"]),
@@ -233,21 +257,37 @@ class LungeAnalyzer:
         hip = to_xy(landing_lm[f"{front_side}_hip"])
         torso_lean = calculate_angle((hip[0], hip[1] - 100), hip, shoulder)
 
-        post_end = min(len(valid) - 1, landing + 8)
-        ankle_post_delta = abs(front_ankle_x[post_end] - front_ankle_x[landing]) if post_end > landing else 0.0
-        torso_post_delta = abs(torso_mid_x[post_end] - torso_mid_x[landing]) if post_end > landing else 0.0
-        post_landing_torso_drift = ankle_post_delta < max(0.002, low_thr * 2.0) and torso_post_delta > max(0.004, low_thr * 3.0)
+        post_end_valid = min(len(valid) - 1, landing_valid + 8)
+        ankle_post_delta = abs(front_ankle_x[post_end_valid] - front_ankle_x[landing_valid]) if post_end_valid > landing_valid else 0.0
+        torso_post_delta = abs(torso_mid_x[post_end_valid] - torso_mid_x[landing_valid]) if post_end_valid > landing_valid else 0.0
+        post_landing_torso_drift = (
+            ankle_post_delta < max(0.002, low_thr * 2.0)
+            and torso_post_delta > max(0.004, low_thr * 3.0)
+        )
+
+        recovery_time_seconds = None
+        recovery_frame_source = "not_set"
+        if recovery_frame is not None:
+            recovery_frame_source = "manual"
+            if fps and fps > 0 and landing >= 0 and recovery_frame >= landing:
+                recovery_time_seconds = round((recovery_frame - landing) / fps, 3)
 
         metrics = {
             "front_side_estimate": front_side,
+            # Global video frame numbers. These match annotated_frames/frame_XXXXX.jpg.
             "wrist_start_frame": wrist_start,
             "foot_start_frame": foot_start,
             "landing_frame": landing,
+            "recovery_frame": recovery_frame,
+            "recovery_frame_source": recovery_frame_source,
+            "recovery_time_seconds": recovery_time_seconds,
+            "fps": fps,
             "hand_starts_before_foot": hand_before_lunge,
             "front_knee_angle_at_landing_deg": round(knee_angle, 2),
             "torso_lean_angle_at_landing_deg": round(torso_lean, 2),
             "head_vertical_movement_range_px": round(max(nose_y) - min(nose_y), 2),
             "number_of_valid_frames": len(valid),
+            "number_of_input_frames": len(landmark_frames),
             "movement_segments": movement_segments,
             "selected_lunge_segment_index": selected_idx,
             "selected_lunge_score": selected["lunge_score"],
@@ -257,12 +297,17 @@ class LungeAnalyzer:
             "post_landing_torso_drift": post_landing_torso_drift,
             "post_landing_ankle_delta": round(ankle_post_delta, 6),
             "post_landing_torso_delta": round(torso_post_delta, 6),
+            # Backward-compatible names from the previous analyzer.
             "wrist_start_frame_global": wrist_start,
             "wrist_start_frame_in_lunge": wrist_start,
             "foot_start_frame_in_lunge": foot_start,
             "hand_starts_before_foot_in_lunge": hand_before_lunge,
+            # Extra valid-index fields for debugging only.
+            "wrist_start_valid_index": wrist_start_valid,
+            "foot_start_valid_index": foot_start_valid,
+            "landing_valid_index": landing_valid,
+            "lunge_peak_valid_index": lunge_peak_valid,
         }
-
         return self._evaluate(metrics)
 
     def _evaluate(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -297,6 +342,11 @@ class LungeAnalyzer:
             issues.append("Head level changes a lot during the action.")
             correction_plan.append("Work on smoother level change; avoid bouncing before/through lunge.")
             score -= 8
+
+        if metrics.get("recovery_frame_source") == "not_set":
+            correction_plan.append(
+                "For the science investigation, mark the recovered en-garde frame with --recovery-frame to calculate recovery time."
+            )
 
         if not issues:
             issues.append("No major beginner-level issues detected from current heuristics.")
